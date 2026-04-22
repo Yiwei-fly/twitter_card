@@ -274,7 +274,7 @@ app.post('/generate-card', upload.single('image'), async (req, res) => {
 
     const { cardId, imagePath } = await generateCard({ imageBuffer, overlayMode });
 
-    saveCard(cardId, { source_url: url || null, image_path: imagePath, overlay_mode: overlayMode });
+    saveCard(cardId, { source_url: url || null, source_image_url: sourceImageUrl, image_path: imagePath, overlay_mode: overlayMode });
 
     const base = baseUrl(req);
     return res.json({
@@ -316,7 +316,7 @@ app.post('/generate-cards', async (req, res) => {
 
       try {
         const { cardId, imagePath } = await generateCard({ imageBuffer, overlayMode });
-        saveCard(cardId, { source_url: url, image_path: imagePath, overlay_mode: overlayMode });
+        saveCard(cardId, { source_url: url, source_image_url: meta.imageUrl, image_path: imagePath, overlay_mode: overlayMode });
         const base = baseUrl(req);
         return {
           success:         true,
@@ -337,12 +337,33 @@ app.post('/generate-cards', async (req, res) => {
 // ─── GET /c/:id  —  Twitter Card landing page ────────────────────────────────
 // This is the URL you paste into Twitter. Twitter's crawler visits it,
 // reads the <meta> tags, and renders the 1200×630 image as a card.
-app.get('/c/:id', (req, res) => {
+app.get('/c/:id', async (req, res) => {
   const cards = loadCards();
   const card  = cards[req.params.id];
 
   if (!card) {
     return res.status(404).send('Card not found');
+  }
+
+  // If the image file was wiped (Railway redeploy), regenerate it silently
+  const diskPath = path.join(__dirname, card.image_path);
+  if (!fs.existsSync(diskPath) && card.source_image_url) {
+    try {
+      const imageBuffer = await downloadImage(card.source_image_url);
+      // Regenerate into the exact same path so the URL stays valid
+      const svgBuf = Buffer.from(buildOverlaySvg(CARD_W, CARD_H, card.overlay_mode || 'play'), 'utf8');
+      const normalised = await sharp(imageBuffer)
+        .rotate()
+        .flatten({ background: { r: 255, g: 255, b: 255 } })
+        .resize(CARD_W, CARD_H, { fit: 'cover', position: 'centre' })
+        .toBuffer();
+      await sharp(normalised)
+        .composite([{ input: svgBuf, top: 0, left: 0 }])
+        .png({ compressionLevel: 8 })
+        .toFile(diskPath);
+    } catch (e) {
+      console.error('[regen]', e.message);
+    }
   }
 
   const base     = baseUrl(req);
