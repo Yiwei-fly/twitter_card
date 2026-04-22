@@ -385,7 +385,7 @@ app.get('/c/:id', async (req, res) => {
   <!-- Twitter Card tags (summary_large_image = full-width image card) -->
   <meta name="twitter:card"        content="summary_large_image">
   ${twitterSite ? `<meta name="twitter:site" content="${twitterSite}">` : ''}
-  <meta name="twitter:title"       content="${xmlEscape(duration)}">
+  <meta name="twitter:title"       content="点击立即播放">
   <meta name="twitter:description" content="点击立即播放 · HD 1080p | 无需下载">
   <meta name="twitter:image"       content="${imageUrl}">
   <meta name="twitter:image:width" content="1200">
