@@ -176,37 +176,10 @@ function buildOverlaySvg(w, h, mode, duration) {
       <polygon points="${tx},${ty} ${tx},${ty + triH} ${tx + triW},${cy}" fill="white"/>`;
   }
 
-  // ── Bottom-left duration badge ────────────────────────────────────────────
-  const dur      = duration || randomDuration();
-  // Offset from bottom: Twitter overlays a ~50px domain bar at the very bottom,
-  // so we place the badge 70px above the bottom edge to stay visible.
-  const padX     = 18, padY = h - 70;
-  const badgeH   = 36, badgeR = 5;
-  const fontSize = 22;
-  // Approximate text width: monospace-ish, ~12px per char
-  const textW    = dur.length * 12 + 4;
-  const badgeW   = textW + 20;
-  const badgeX   = padX;
-  const badgeY   = padY - badgeH;
-  const textX    = badgeX + badgeW / 2;
-  const textY    = badgeY + badgeH / 2 + 7;
-
-  const durationBadge = `
-    <rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}"
-      rx="${badgeR}" fill="black" fill-opacity="0.75"/>
-    <text x="${textX}" y="${textY}"
-      font-family="DejaVu Sans Mono, Liberation Mono, monospace"
-      font-size="${fontSize}"
-      font-weight="bold"
-      fill="white"
-      text-anchor="middle"
-    >${xmlEscape(dur)}</text>`;
-
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
   <circle cx="${cx}" cy="${cy}" r="${R}" fill="black" fill-opacity="0.55"/>
   ${icon}
-  ${durationBadge}
 </svg>`;
 }
 
@@ -385,7 +358,7 @@ app.get('/c/:id', async (req, res) => {
   <!-- Twitter Card tags (summary_large_image = full-width image card) -->
   <meta name="twitter:card"        content="summary_large_image">
   ${twitterSite ? `<meta name="twitter:site" content="${twitterSite}">` : ''}
-  <meta name="twitter:title"       content="点击立即播放">
+  <meta name="twitter:title"       content="${xmlEscape(duration)}">
   <meta name="twitter:description" content="点击立即播放 · HD 1080p | 无需下载">
   <meta name="twitter:image"       content="${imageUrl}">
   <meta name="twitter:image:width" content="1200">
