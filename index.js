@@ -178,9 +178,11 @@ function buildOverlaySvg(w, h, mode) {
 
   // ── Bottom-left duration badge ────────────────────────────────────────────
   const dur      = randomDuration();
-  const padX     = 18, padY = h - 22;
-  const badgeH   = 30, badgeR = 5;
-  const fontSize = 20;
+  // Offset from bottom: Twitter overlays a ~50px domain bar at the very bottom,
+  // so we place the badge 70px above the bottom edge to stay visible.
+  const padX     = 18, padY = h - 70;
+  const badgeH   = 36, badgeR = 5;
+  const fontSize = 22;
   // Approximate text width: monospace-ish, ~12px per char
   const textW    = dur.length * 12 + 4;
   const badgeW   = textW + 20;
