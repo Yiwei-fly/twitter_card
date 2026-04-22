@@ -193,7 +193,7 @@ function buildOverlaySvg(w, h, mode) {
     <rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="${badgeH}"
       rx="${badgeR}" fill="black" fill-opacity="0.75"/>
     <text x="${textX}" y="${textY}"
-      font-family="Arial, Helvetica, sans-serif"
+      font-family="DejaVu Sans Mono, Liberation Mono, monospace"
       font-size="${fontSize}"
       font-weight="bold"
       fill="white"
