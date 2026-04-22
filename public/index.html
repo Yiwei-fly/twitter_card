@@ -402,6 +402,10 @@
             <option value="pause" ${(data.overlayMode || 'play')  === 'pause' ? 'selected' : ''}>⏸  暂停（Pause）</option>
           </select>
         </div>
+        <div class="field-group">
+          <label>你的 Twitter 账号（可选，填后无域名覆盖条）</label>
+          <input type="text" name="twitterSite" placeholder="@你的账号" value="">
+        </div>
         <div class="field-group full">
           <label>兜底图片（可选，无法抓取时使用）</label>
           <div class="file-wrap" id="filewrap-${id}">
@@ -455,6 +459,7 @@
       url:         card.querySelector('[name="url"]').value.trim(),
       title:       card.querySelector('[name="title"]').value.trim(),
       overlayMode: card.querySelector('[name="overlayMode"]').value,
+      twitterSite: card.querySelector('[name="twitterSite"]').value.trim(),
       fileInput:   card.querySelector('input[type="file"]'),
     }));
   }
@@ -464,6 +469,7 @@
     if (row.url)         fd.append('url',         row.url);
     if (row.title)       fd.append('title',        row.title);
     if (row.overlayMode) fd.append('overlayMode',  row.overlayMode);
+    if (row.twitterSite) fd.append('twitterSite',  row.twitterSite);
     if (row.fileInput?.files?.[0]) fd.append('image', row.fileInput.files[0]);
 
     const res = await fetch('/generate-card', { method: 'POST', body: fd });

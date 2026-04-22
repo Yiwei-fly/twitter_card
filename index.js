@@ -237,7 +237,7 @@ async function generateCard({ imageBuffer, overlayMode = 'play' }) {
 
 // ─── POST /generate-card ──────────────────────────────────────────────────────
 app.post('/generate-card', upload.single('image'), async (req, res) => {
-  const { url, overlayMode = 'play' } = req.body;
+  const { url, overlayMode = 'play', twitterSite = '' } = req.body;
 
   let imageBuffer     = null;
   let sourceImageUrl  = null;
@@ -275,7 +275,7 @@ app.post('/generate-card', upload.single('image'), async (req, res) => {
 
     const { cardId, imagePath, duration } = await generateCard({ imageBuffer, overlayMode });
 
-    saveCard(cardId, { source_url: url || null, source_image_url: sourceImageUrl, image_path: imagePath, overlay_mode: overlayMode, duration });
+    saveCard(cardId, { source_url: url || null, source_image_url: sourceImageUrl, image_path: imagePath, overlay_mode: overlayMode, duration, twitter_site: twitterSite });
 
     const base = baseUrl(req);
     return res.json({
@@ -371,7 +371,7 @@ app.get('/c/:id', async (req, res) => {
   const imageUrl  = `${base}${card.image_path}`;
   const pageUrl   = `${base}/c/${req.params.id}`;
   const duration  = card.duration || '';
-  const twitterSite = process.env.TWITTER_SITE || '';
+  const twitterSite = card.twitter_site || '';
   const srcUrl   = card.source_url || pageUrl;
 
   // Minimal HTML — Twitter only needs the <head> meta tags
