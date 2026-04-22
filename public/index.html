@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitter Card 生成器</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f5f6fa;
+      --surface:   #ffffff;
+      --border:    #e2e5ec;
+      --accent:    #1d9bf0;
+      --accent-dk: #1877d4;
+      --text:      #14171a;
+      --muted:     #657786;
+      --success:   #17bf63;
+      --error:     #e0245e;
+      --radius:    10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 16px 64px;
+    }
+
+    /* ── Layout ── */
+    .container { max-width: 900px; margin: 0 auto; }
+
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    header h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    header h1 span { color: var(--accent); }
+    header p { color: var(--muted); margin-top: 6px; font-size: 14px; }
+
+    /* ── Card surface ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    /* ── Row header ── */
+    .row-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .row-num {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--bg);
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .btn-remove {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      padding: 3px 10px;
+      transition: all .15s;
+    }
+    .btn-remove:hover { border-color: var(--error); color: var(--error); }
+
+    /* ── Form fields ── */
+    .fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 600px) { .fields { grid-template-columns: 1fr; } }
+
+    .field-group { display: flex; flex-direction: column; gap: 4px; }
+    .field-group.full { grid-column: 1 / -1; }
+
+    label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+
+    input[type="text"],
+    input[type="url"],
+    select {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color .15s;
+      width: 100%;
+      background: #fff;
+      color: var(--text);
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+
+    .file-wrap {
+      position: relative;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color .15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 36px;
+    }
+    .file-wrap:hover { border-color: var(--accent); color: var(--accent); }
+    .file-wrap input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+    }
+    .file-name { font-size: 12px; color: var(--text); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Buttons ── */
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .btn {
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 10px 20px;
+      transition: all .15s;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      flex: 1;
+    }
+    .btn-primary:hover { background: var(--accent-dk); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-add {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-add:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Progress ── */
+    #progress-bar-wrap {
+      display: none;
+      margin-top: 16px;
+    }
+    .progress-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .progress-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      width: 0%;
+      transition: width .3s ease;
+    }
+
+    /* ── Results ── */
+    #results { margin-top: 32px; }
+    #results h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .result-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
+    }
+    .result-url {
+      font-size: 12px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .badge-ok  { background: #e8f8f0; color: var(--success); }
+    .badge-err { background: #fde8ef; color: var(--error);   }
+
+    .result-images {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 16px;
+    }
+    @media (max-width: 600px) { .result-images { grid-template-columns: 1fr; } }
+
+    .result-img-block label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+    }
+    /* Force correct 1200:630 aspect ratio — no black bars */
+    .result-img-block .img-frame {
+      width: 100%;
+      aspect-ratio: 1200 / 630;
+      overflow: hidden;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #111;
+    }
+    .result-img-block .img-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .btn-dl {
+      display: inline-block;
+      margin-top: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 5px 14px;
+      transition: all .15s;
+    }
+    .btn-dl:hover { background: var(--accent); color: #fff; }
+
+    /* Twitter Card link box */
+    .card-link-box {
+      margin: 14px 16px 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      padding: 12px 14px;
+    }
+    .card-link-box .clb-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .card-link-box .clb-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .card-link-box input {
+      flex: 1;
+      font-size: 13px;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      outline: none;
+    }
+    .btn-copy {
+      white-space: nowrap;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-copy:hover { background: var(--accent-dk); }
+    .btn-copy.copied { background: var(--success); }
+    .card-link-box .clb-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .error-msg {
+      padding: 16px;
+      color: var(--error);
+      font-size: 14px;
+    }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Twitter Card <span>生成器</span></h1>
+    <p>输入网址，自动提取封面图并叠加播放/暂停按钮，生成 1200×630 卡片图</p>
+  </header>
+
+  <!-- ── Input section ── -->
+  <section>
+    <div id="rows-container"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-add" id="btn-add">＋ 添加一行</button>
+      <button class="btn btn-primary" id="btn-generate">生成卡片图</button>
+    </div>
+
+    <div id="progress-bar-wrap">
+      <div class="progress-label" id="progress-label">处理中…</div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Results ── -->
+  <section id="results"></section>
+
+</div>
+
+<script>
+  let rowCount = 0;
+
+  function addRow(data = {}) {
+    rowCount++;
+    const id = rowCount;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.rowId = id;
+
+    card.innerHTML = `
+      <div class="row-header">
+        <span class="row-num">第 ${id} 条</span>
+        <button class="btn-remove" data-row="${id}">删除</button>
+      </div>
+      <div class="fields">
+        <div class="field-group full">
+          <label>网页 URL</label>
+          <input type="url" name="url" placeholder="https://example.com/article" value="${escHtml(data.url || '')}">
+        </div>
+        <div class="field-group">
+          <label>标题（可选，留空则自动抓取）</label>
+          <input type="text" name="title" placeholder="自定义标题文字" value="${escHtml(data.title || '')}">
+        </div>
+        <div class="field-group">
+          <label>按钮样式</label>
+          <select name="overlayMode">
+            <option value="play"  ${(data.overlayMode || 'play')  === 'play'  ? 'selected' : ''}>▶  播放（Play）</option>
+            <option value="pause" ${(data.overlayMode || 'play')  === 'pause' ? 'selected' : ''}>⏸  暂停（Pause）</option>
+          </select>
+        </div>
+        <div class="field-group full">
+          <label>兜底图片（可选，无法抓取时使用）</label>
+          <div class="file-wrap" id="filewrap-${id}">
+            <span>📁 点击选择图片文件</span>
+            <span class="file-name" id="fname-${id}"></span>
+            <input type="file" id="file-${id}" accept="image/*">
+          </div>
+        </div>
+      </div>
+    `;
+
+    // File name preview
+    card.querySelector(`#file-${id}`).addEventListener('change', (e) => {
+      const fname = e.target.files[0]?.name || '';
+      const nameEl = card.querySelector(`#fname-${id}`);
+      const labelEl = card.querySelector(`#filewrap-${id} > span:first-child`);
+      if (fname) {
+        nameEl.textContent = fname;
+        labelEl.textContent = '✅';
+      } else {
+        nameEl.textContent = '';
+        labelEl.textContent = '📁 点击选择图片文件';
+      }
+    });
+
+    // Remove row
+    card.querySelector('.btn-remove').addEventListener('click', () => {
+      card.remove();
+      renumberRows();
+    });
+
+    document.getElementById('rows-container').appendChild(card);
+  }
+
+  function renumberRows() {
+    document.querySelectorAll('#rows-container .card').forEach((c, i) => {
+      const numEl = c.querySelector('.row-num');
+      if (numEl) numEl.textContent = `第 ${i + 1} 条`;
+    });
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;');
+  }
+
+  function collectRows() {
+    return Array.from(document.querySelectorAll('#rows-container .card')).map(card => ({
+      url:         card.querySelector('[name="url"]').value.trim(),
+      title:       card.querySelector('[name="title"]').value.trim(),
+      overlayMode: card.querySelector('[name="overlayMode"]').value,
+      fileInput:   card.querySelector('input[type="file"]'),
+    }));
+  }
+
+  async function submitRow(row) {
+    const fd = new FormData();
+    if (row.url)         fd.append('url',         row.url);
+    if (row.title)       fd.append('title',        row.title);
+    if (row.overlayMode) fd.append('overlayMode',  row.overlayMode);
+    if (row.fileInput?.files?.[0]) fd.append('image', row.fileInput.files[0]);
+
+    const res = await fetch('/generate-card', { method: 'POST', body: fd });
+    return res.json();
+  }
+
+  function renderResult(data, index) {
+    const section = document.getElementById('results');
+
+    const card = document.createElement('div');
+    card.className = 'result-card';
+
+    const displayUrl = data.url || `条目 ${index + 1}`;
+    const badgeHtml  = data.success
+      ? '<span class="badge badge-ok">✓ 成功</span>'
+      : '<span class="badge badge-err">✗ 失败</span>';
+
+    let body = '';
+    if (data.success) {
+      const srcImg = data.source_image
+        ? `<img src="${escHtml(data.source_image)}" alt="原始封面图" loading="lazy" onerror="this.style.display='none'">`
+        : '<p style="font-size:13px;color:#657786;padding:8px 0">无法加载原图</p>';
+
+      const cardUrl  = data.card_page_url || '';
+      const copyId   = `copy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      body = `
+        <div class="result-images">
+          <div class="result-img-block">
+            <label>原始封面图</label>
+            <div class="img-frame">${srcImg}</div>
+          </div>
+          <div class="result-img-block">
+            <label>生成后卡片图 (1200×630)</label>
+            <div class="img-frame">
+              <img src="${escHtml(data.generated_image)}" alt="生成卡片图" loading="lazy">
+            </div>
+            <a class="btn-dl" href="${escHtml(data.generated_image)}" download>⬇ 下载 PNG</a>
+          </div>
+        </div>
+        ${cardUrl ? `
+        <div class="card-link-box">
+          <div class="clb-label">Twitter Card 链接 — 粘贴到推文即可显示图片卡</div>
+          <div class="clb-row">
+            <input id="${escHtml(copyId)}" type="text" value="${escHtml(cardUrl)}" readonly onclick="this.select()">
+            <button class="btn-copy" onclick="copyCardUrl('${escHtml(copyId)}', this)">复制链接</button>
+          </div>
+          <div class="clb-hint">⚠️ 需要公网可访问的域名，Twitter 才能抓取卡片（见页面底部说明）</div>
+        </div>` : ''}`;
+    } else {
+      body = `<div class="error-msg">❌ ${escHtml(data.error || '未知错误')}</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="result-card-header">
+        <span class="result-url" title="${escHtml(displayUrl)}">${escHtml(displayUrl)}</span>
+        ${badgeHtml}
+      </div>
+      ${body}`;
+
+    section.appendChild(card);
+  }
+
+  // ── Event handlers ────────────────────────────────────────────────────────
+
+  document.getElementById('btn-add').addEventListener('click', () => addRow());
+
+  document.getElementById('btn-generate').addEventListener('click', async () => {
+    const rows = collectRows();
+    const valid = rows.filter(r => r.url || r.fileInput?.files?.[0]);
+
+    if (valid.length === 0) {
+      alert('请至少填写一个 URL，或上传一张图片。');
+      return;
+    }
+
+    // Reset results
+    const resultsSection = document.getElementById('results');
+    resultsSection.innerHTML = '<h2>生成结果</h2>';
+
+    const btn       = document.getElementById('btn-generate');
+    const wrapEl    = document.getElementById('progress-bar-wrap');
+    const labelEl   = document.getElementById('progress-label');
+    const fillEl    = document.getElementById('progress-fill');
+
+    btn.disabled        = true;
+    wrapEl.style.display = 'block';
+    fillEl.style.width  = '0%';
+
+    let done = 0;
+    for (const [i, row] of valid.entries()) {
+      labelEl.textContent = `处理第 ${i + 1} / ${valid.length} 条…`;
+      try {
+        const result = await submitRow(row);
+        renderResult(result, i);
+      } catch (e) {
+        renderResult({ success: false, url: row.url, error: e.message }, i);
+      }
+      done++;
+      fillEl.style.width = `${Math.round(done / valid.length * 100)}%`;
+    }
+
+    labelEl.textContent  = `全部完成 ✅  共 ${done} 条`;
+    btn.disabled         = false;
+
+    // Scroll to results
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // ── Copy card URL ─────────────────────────────────────────────────────────
+  function copyCardUrl(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => {
+      btn.textContent = '已复制 ✓';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '复制链接'; btn.classList.remove('copied'); }, 2000);
+    }).catch(() => {
+      document.execCommand('copy');
+      btn.textContent = '已复制 ✓';
+      setTimeout(() => { btn.textContent = '复制链接'; }, 2000);
+    });
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  addRow();
+  addRow({ url: '', overlayMode: 'pause' });
+</script>
+
+<!-- ── 部署说明 ── -->
+<footer style="max-width:900px;margin:48px auto 0;padding:24px 16px 40px;border-top:1px solid #e2e5ec;font-size:13px;color:#657786;line-height:1.8">
+  <strong style="color:#14171a;font-size:14px">如何让 Twitter 识别卡片链接</strong><br>
+  Twitter 的爬虫需要能从公网访问你的服务器。localhost 无法使用。推荐方案：
+  <ol style="margin:10px 0 0 18px;line-height:2">
+    <li><strong>ngrok（最快，适合测试）</strong> — 安装后运行 <code style="background:#f0f2f5;padding:1px 6px;border-radius:4px">ngrok http 3000</code>，得到形如 <code>https://xxxx.ngrok-free.app</code> 的公网地址。将该域名设为环境变量后重启服务：<br>
+      <code style="background:#f0f2f5;padding:2px 8px;border-radius:4px">BASE_URL=https://xxxx.ngrok-free.app node index.js</code>
+    </li>
+    <li><strong>Railway / Render / Fly.io（永久部署）</strong> — 将本项目推到 GitHub，一键部署即可获得固定域名，设置 <code>BASE_URL</code> 环境变量为该域名。</li>
+  </ol>
+  <br>
+  生成后的卡片链接格式为 <code style="background:#f0f2f5;padding:1px 6px;border-radius:4px">https://你的域名/c/&lt;id&gt;</code>，粘贴进推文正文即可让 Twitter 自动展示图片卡。
+  如需验证 meta 标签是否正确，可用 <a href="https://cards-dev.twitter.com/validator" target="_blank" style="color:#1d9bf0">Twitter Card Validator</a>。
+</footer>
+</body>
+</html>
