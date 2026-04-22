@@ -363,6 +363,8 @@ app.get('/c/:id', (req, res) => {
   <meta name="twitter:image"       content="${imageUrl}">
   <meta name="twitter:image:width" content="1200">
   <meta name="twitter:image:height" content="630">
+  <meta name="twitter:title"       content="Video">
+  <meta name="twitter:description" content=" ">
   <meta name="twitter:url"         content="${srcUrl}">
 
   <!-- Open Graph (Telegram, Slack, iMessage, etc.) -->
