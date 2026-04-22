@@ -144,15 +144,13 @@ function xmlEscape(str) {
 
 // ─── Random video duration ────────────────────────────────────────────────────
 function randomDuration() {
-  // Bias toward realistic video lengths: 3min–2h range
-  const totalSecs = Math.floor(Math.random() * (7200 - 180) + 180);
+  // Range: 00:00:10 → 02:00:00, always HH:MM:SS
+  const totalSecs = Math.floor(Math.random() * (7200 - 10 + 1)) + 10;
   const h = Math.floor(totalSecs / 3600);
   const m = Math.floor((totalSecs % 3600) / 60);
   const s = totalSecs % 60;
   const pad = n => String(n).padStart(2, '0');
-  return h > 0
-    ? `${pad(h)}:${pad(m)}:${pad(s)}`
-    : `${pad(m)}:${pad(s)}`;
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 function buildOverlaySvg(w, h, mode) {
@@ -363,8 +361,7 @@ app.get('/c/:id', (req, res) => {
   <meta name="twitter:image"       content="${imageUrl}">
   <meta name="twitter:image:width" content="1200">
   <meta name="twitter:image:height" content="630">
-  <meta name="twitter:title"       content="Video">
-  <meta name="twitter:description" content=" ">
+  <meta name="twitter:title"       content="&#x200B;">
   <meta name="twitter:url"         content="${srcUrl}">
 
   <!-- Open Graph (Telegram, Slack, iMessage, etc.) -->
