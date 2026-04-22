@@ -153,7 +153,7 @@ function randomDuration() {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-function buildOverlaySvg(w, h, mode) {
+function buildOverlaySvg(w, h, mode, duration) {
   const cx = Math.round(w / 2);
   const cy = Math.round(h / 2);
   const R  = 68;
@@ -177,7 +177,7 @@ function buildOverlaySvg(w, h, mode) {
   }
 
   // ── Bottom-left duration badge ────────────────────────────────────────────
-  const dur      = randomDuration();
+  const dur      = duration || randomDuration();
   // Offset from bottom: Twitter overlays a ~50px domain bar at the very bottom,
   // so we place the badge 70px above the bottom edge to stay visible.
   const padX     = 18, padY = h - 70;
@@ -212,7 +212,8 @@ function buildOverlaySvg(w, h, mode) {
 
 // ─── Generate card PNG ────────────────────────────────────────────────────────
 async function generateCard({ imageBuffer, overlayMode = 'play' }) {
-  const svgBuf  = Buffer.from(buildOverlaySvg(CARD_W, CARD_H, overlayMode), 'utf8');
+  const duration = randomDuration(); // capture so we can store it in metadata
+  const svgBuf  = Buffer.from(buildOverlaySvg(CARD_W, CARD_H, overlayMode, duration), 'utf8');
   const cardId  = uuidv4();
   const outFile = `card_${cardId}.png`;
   const outPath = path.join(__dirname, 'generated', outFile);
@@ -231,7 +232,7 @@ async function generateCard({ imageBuffer, overlayMode = 'play' }) {
     .png({ compressionLevel: 8 })
     .toFile(outPath);
 
-  return { cardId, imagePath: `/generated/${outFile}` };
+  return { cardId, imagePath: `/generated/${outFile}`, duration };
 }
 
 // ─── POST /generate-card ──────────────────────────────────────────────────────
@@ -272,9 +273,9 @@ app.post('/generate-card', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'Provide a URL or upload an image.' });
     }
 
-    const { cardId, imagePath } = await generateCard({ imageBuffer, overlayMode });
+    const { cardId, imagePath, duration } = await generateCard({ imageBuffer, overlayMode });
 
-    saveCard(cardId, { source_url: url || null, source_image_url: sourceImageUrl, image_path: imagePath, overlay_mode: overlayMode });
+    saveCard(cardId, { source_url: url || null, source_image_url: sourceImageUrl, image_path: imagePath, overlay_mode: overlayMode, duration });
 
     const base = baseUrl(req);
     return res.json({
@@ -315,8 +316,8 @@ app.post('/generate-cards', async (req, res) => {
       catch (e) { return { success: false, url, error: `Download failed: ${e.message}` }; }
 
       try {
-        const { cardId, imagePath } = await generateCard({ imageBuffer, overlayMode });
-        saveCard(cardId, { source_url: url, source_image_url: meta.imageUrl, image_path: imagePath, overlay_mode: overlayMode });
+        const { cardId, imagePath, duration } = await generateCard({ imageBuffer, overlayMode });
+        saveCard(cardId, { source_url: url, source_image_url: meta.imageUrl, image_path: imagePath, overlay_mode: overlayMode, duration });
         const base = baseUrl(req);
         return {
           success:         true,
@@ -351,7 +352,7 @@ app.get('/c/:id', async (req, res) => {
     try {
       const imageBuffer = await downloadImage(card.source_image_url);
       // Regenerate into the exact same path so the URL stays valid
-      const svgBuf = Buffer.from(buildOverlaySvg(CARD_W, CARD_H, card.overlay_mode || 'play'), 'utf8');
+      const svgBuf = Buffer.from(buildOverlaySvg(CARD_W, CARD_H, card.overlay_mode || 'play', card.duration), 'utf8');
       const normalised = await sharp(imageBuffer)
         .rotate()
         .flatten({ background: { r: 255, g: 255, b: 255 } })
@@ -366,9 +367,11 @@ app.get('/c/:id', async (req, res) => {
     }
   }
 
-  const base     = baseUrl(req);
-  const imageUrl = `${base}${card.image_path}`;
-  const pageUrl  = `${base}/c/${req.params.id}`;
+  const base      = baseUrl(req);
+  const imageUrl  = `${base}${card.image_path}`;
+  const pageUrl   = `${base}/c/${req.params.id}`;
+  const duration  = card.duration || '';
+  const twitterSite = process.env.TWITTER_SITE || '';
   const srcUrl   = card.source_url || pageUrl;
 
   // Minimal HTML — Twitter only needs the <head> meta tags
@@ -381,10 +384,12 @@ app.get('/c/:id', async (req, res) => {
 
   <!-- Twitter Card tags (summary_large_image = full-width image card) -->
   <meta name="twitter:card"        content="summary_large_image">
+  ${twitterSite ? `<meta name="twitter:site" content="${twitterSite}">` : ''}
+  <meta name="twitter:title"       content="${xmlEscape(duration)}">
+  <meta name="twitter:description" content="点击立即播放 · HD 1080p | 无需下载">
   <meta name="twitter:image"       content="${imageUrl}">
   <meta name="twitter:image:width" content="1200">
   <meta name="twitter:image:height" content="630">
-  <meta name="twitter:title"       content="&#x200B;">
   <meta name="twitter:url"         content="${pageUrl}">
 
   <!-- Open Graph (Telegram, Slack, iMessage, etc.) -->
