@@ -3,4 +3,6 @@ uploads/
 generated/
 cards.json
 .env
+.env*.local
 *.log
+.vercel
