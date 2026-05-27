@@ -100,6 +100,7 @@
 
     input[type="text"],
     input[type="url"],
+    input[type="password"],
     select {
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -350,6 +351,12 @@
 
   <!-- ── Input section ── -->
   <section>
+    <div class="card">
+      <div class="field-group">
+        <label for="generator-key">生成访问密钥（公网部署时需要）</label>
+        <input type="password" id="generator-key" placeholder="本地使用可留空">
+      </div>
+    </div>
     <div id="rows-container"></div>
 
     <div class="btn-row">
@@ -466,13 +473,15 @@
 
   async function submitRow(row) {
     const fd = new FormData();
+    const generatorKey = document.getElementById('generator-key').value.trim();
     if (row.url)         fd.append('url',         row.url);
     if (row.title)       fd.append('title',        row.title);
     if (row.overlayMode) fd.append('overlayMode',  row.overlayMode);
     if (row.twitterSite) fd.append('twitterSite',  row.twitterSite);
     if (row.fileInput?.files?.[0]) fd.append('image', row.fileInput.files[0]);
 
-    const res = await fetch('/generate-card', { method: 'POST', body: fd });
+    const headers = generatorKey ? { 'x-generator-key': generatorKey } : {};
+    const res = await fetch('/generate-card', { method: 'POST', headers, body: fd });
     return res.json();
   }
 
@@ -608,7 +617,7 @@
     <li><strong>ngrok（最快，适合测试）</strong> — 安装后运行 <code style="background:#f0f2f5;padding:1px 6px;border-radius:4px">ngrok http 3000</code>，得到形如 <code>https://xxxx.ngrok-free.app</code> 的公网地址。将该域名设为环境变量后重启服务：<br>
       <code style="background:#f0f2f5;padding:2px 8px;border-radius:4px">BASE_URL=https://xxxx.ngrok-free.app node index.js</code>
     </li>
-    <li><strong>Railway / Render / Fly.io（永久部署）</strong> — 将本项目推到 GitHub，一键部署即可获得固定域名，设置 <code>BASE_URL</code> 环境变量为该域名。</li>
+    <li><strong>Vercel + Blob（长期使用）</strong> — 部署到 Vercel 并连接 public Blob store，用固定域名生成可长期抓取的图片卡链接。公开部署请配置 <code>GENERATOR_KEY</code> 保护生成接口。</li>
   </ol>
   <br>
   生成后的卡片链接格式为 <code style="background:#f0f2f5;padding:1px 6px;border-radius:4px">https://你的域名/c/&lt;id&gt;</code>，粘贴进推文正文即可让 Twitter 自动展示图片卡。

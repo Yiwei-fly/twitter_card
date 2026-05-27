@@ -7,6 +7,9 @@ const cheerio = require('cheerio');
 const sharp   = require('sharp');
 const path    = require('path');
 const fs      = require('fs');
+const dns     = require('dns').promises;
+const net     = require('net');
+const { put, list } = require('@vercel/blob');
 const { v4: uuidv4 } = require('uuid');
 
 const app  = express();
@@ -14,28 +17,61 @@ const PORT = process.env.PORT || 3000;
 
 const CARD_W = 1200;
 const CARD_H = 630;
+const USE_BLOB_STORAGE = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+const MAX_BATCH_SIZE = 10;
 
 // ─── Ensure directories exist ─────────────────────────────────────────────────
-for (const dir of ['uploads', 'generated', 'public']) {
+for (const dir of USE_BLOB_STORAGE ? ['public'] : ['uploads', 'generated', 'public']) {
   fs.mkdirSync(path.join(__dirname, dir), { recursive: true });
 }
 
 // ─── Card metadata store ──────────────────────────────────────────────────────
-// In-memory primary store; also persisted to cards.json when filesystem allows.
+// Local development keeps data on disk. Vercel persists public card assets and
+// non-sensitive display metadata in Blob so X can access links after cold starts.
 const CARDS_CACHE = {};
 const CARDS_FILE  = path.join(__dirname, 'cards.json');
 
-// Preload any previously saved cards (works locally; skipped on Railway cold start)
-try {
-  Object.assign(CARDS_CACHE, JSON.parse(fs.readFileSync(CARDS_FILE, 'utf8')));
-} catch { /* fresh start */ }
+if (!USE_BLOB_STORAGE) {
+  try {
+    Object.assign(CARDS_CACHE, JSON.parse(fs.readFileSync(CARDS_FILE, 'utf8')));
+  } catch { /* fresh start */ }
+}
 
-function loadCards() { return CARDS_CACHE; }
+async function loadCard(id) {
+  if (!USE_BLOB_STORAGE) return CARDS_CACHE[id] || null;
 
-function saveCard(id, meta) {
-  CARDS_CACHE[id] = { ...meta, created_at: new Date().toISOString() };
+  const pathname = `cards/${id}.json`;
+  const result = await list({ prefix: pathname, limit: 1 });
+  const metadataBlob = result.blobs.find(blob => blob.pathname === pathname);
+  if (!metadataBlob) return null;
+
+  const response = await axios.get(metadataBlob.url, { timeout: 8000 });
+  return response.data;
+}
+
+async function saveCard(id, meta) {
+  const storedMeta = { ...meta, created_at: new Date().toISOString() };
+
+  if (USE_BLOB_STORAGE) {
+    const publicMeta = {
+      image_path: storedMeta.image_path,
+      overlay_mode: storedMeta.overlay_mode,
+      duration: storedMeta.duration,
+      twitter_site: storedMeta.twitter_site || '',
+      created_at: storedMeta.created_at,
+    };
+    await put(`cards/${id}.json`, JSON.stringify(publicMeta), {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: 'application/json',
+      cacheControlMaxAge: 60,
+    });
+    return;
+  }
+
+  CARDS_CACHE[id] = storedMeta;
   try { fs.writeFileSync(CARDS_FILE, JSON.stringify(CARDS_CACHE, null, 2)); }
-  catch { /* read-only filesystem on some hosts — in-memory is enough */ }
+  catch { /* local generation remains available even if persistence fails */ }
 }
 
 function baseUrl(req) {
@@ -51,14 +87,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads',   express.static(path.join(__dirname, 'uploads')));
 app.use('/generated', express.static(path.join(__dirname, 'generated')));
 
+function requireGeneratorKey(req, res, next) {
+  const requiredKey = process.env.GENERATOR_KEY;
+  if (!requiredKey || req.get('x-generator-key') === requiredKey) return next();
+  return res.status(401).json({ success: false, error: 'Invalid generator access key.' });
+}
+
 // ─── Multer ───────────────────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
-  filename:    (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg';
-    cb(null, `up_${uuidv4()}${ext}`);
-  },
-});
+const storage = USE_BLOB_STORAGE
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+    destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads')),
+    filename:    (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.jpg';
+      cb(null, `up_${uuidv4()}${ext}`);
+    },
+  });
 const upload = multer({
   storage,
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -68,11 +112,88 @@ const upload = multer({
   },
 });
 
-// ─── Web Scraping ─────────────────────────────────────────────────────────────
+// ─── Outbound URL safety and web scraping ─────────────────────────────────────
+function isPrivateAddress(address) {
+  if (net.isIPv4(address)) {
+    const [a, b, c] = address.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || a === 169 && b === 254 ||
+      a === 100 && b >= 64 && b <= 127 ||
+      a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168 ||
+      a === 192 && b === 0 || a === 192 && b === 0 && c === 2 ||
+      a === 198 && (b === 18 || b === 19 || b === 51 && c === 100) ||
+      a === 203 && b === 0 && c === 113 || a >= 224;
+  }
+
+  if (net.isIPv6(address)) {
+    const normalized = address.toLowerCase();
+    if (normalized === '::' || normalized === '::1' ||
+        normalized.startsWith('fc') || normalized.startsWith('fd') ||
+        /^fe[89ab]/.test(normalized) || normalized.startsWith('ff') ||
+        normalized.startsWith('2001:db8:')) {
+      return true;
+    }
+    if (normalized.startsWith('::ffff:')) {
+      return isPrivateAddress(normalized.slice(7));
+    }
+  }
+
+  return false;
+}
+
+async function assertPublicHttpUrl(rawUrl) {
+  let target;
+  try { target = new URL(rawUrl); }
+  catch { throw new Error('Invalid URL.'); }
+
+  if (!['http:', 'https:'].includes(target.protocol)) {
+    throw new Error('Only HTTP and HTTPS URLs are supported.');
+  }
+
+  const hostname = target.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local')) {
+    throw new Error('Local network URLs are not allowed.');
+  }
+
+  const addresses = net.isIP(hostname)
+    ? [{ address: hostname }]
+    : await dns.lookup(hostname, { all: true, verbatim: true });
+
+  if (addresses.length === 0 || addresses.some(result => isPrivateAddress(result.address))) {
+    throw new Error('Private network URLs are not allowed.');
+  }
+
+  return target.href;
+}
+
+async function getPublicResource(rawUrl, options) {
+  let currentUrl = rawUrl;
+
+  for (let redirectCount = 0; redirectCount <= 5; redirectCount++) {
+    currentUrl = await assertPublicHttpUrl(currentUrl);
+    const response = await axios.get(currentUrl, {
+      ...options,
+      maxRedirects: 0,
+      validateStatus: status => status >= 200 && status < 400,
+    });
+
+    if (response.status >= 300) {
+      const location = response.headers.location;
+      if (!location || redirectCount === 5) throw new Error('Too many redirects.');
+      currentUrl = new URL(location, currentUrl).href;
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error('Could not fetch URL.');
+}
+
 async function scrapePageMeta(pageUrl) {
-  const response = await axios.get(pageUrl, {
+  const response = await getPublicResource(pageUrl, {
     timeout: 8000,
-    maxRedirects: 5,
+    maxContentLength: 2 * 1024 * 1024,
     headers: {
       'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -120,10 +241,10 @@ async function scrapePageMeta(pageUrl) {
 
 // ─── Download image buffer ────────────────────────────────────────────────────
 async function downloadImage(url) {
-  const res = await axios.get(url, {
+  const res = await getPublicResource(url, {
     responseType: 'arraybuffer',
     timeout: 8000,
-    maxRedirects: 5,
+    maxContentLength: 20 * 1024 * 1024,
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; TwitterCardBot/1.0)',
       'Accept':     'image/*,*/*;q=0.8',
@@ -189,7 +310,6 @@ async function generateCard({ imageBuffer, overlayMode = 'play' }) {
   const svgBuf  = Buffer.from(buildOverlaySvg(CARD_W, CARD_H, overlayMode, duration), 'utf8');
   const cardId  = uuidv4();
   const outFile = `card_${cardId}.png`;
-  const outPath = path.join(__dirname, 'generated', outFile);
 
   // Step 1: normalise — auto-rotate (EXIF), flatten transparency to white,
   //         then resize with cover so the full 1200×630 is always filled.
@@ -200,16 +320,28 @@ async function generateCard({ imageBuffer, overlayMode = 'play' }) {
     .toBuffer();
 
   // Step 2: composite SVG overlay
-  await sharp(normalised)
+  const outputBuffer = await sharp(normalised)
     .composite([{ input: svgBuf, top: 0, left: 0 }])
     .png({ compressionLevel: 8 })
-    .toFile(outPath);
+    .toBuffer();
+
+  if (USE_BLOB_STORAGE) {
+    const image = await put(`generated/${outFile}`, outputBuffer, {
+      access: 'public',
+      addRandomSuffix: false,
+      contentType: 'image/png',
+    });
+    return { cardId, imagePath: image.url, duration };
+  }
+
+  const outPath = path.join(__dirname, 'generated', outFile);
+  await fs.promises.writeFile(outPath, outputBuffer);
 
   return { cardId, imagePath: `/generated/${outFile}`, duration };
 }
 
 // ─── POST /generate-card ──────────────────────────────────────────────────────
-app.post('/generate-card', upload.single('image'), async (req, res) => {
+app.post('/generate-card', requireGeneratorKey, upload.single('image'), async (req, res) => {
   const { url, overlayMode = 'play', twitterSite = '' } = req.body;
 
   let imageBuffer     = null;
@@ -218,8 +350,8 @@ app.post('/generate-card', upload.single('image'), async (req, res) => {
 
   try {
     if (req.file) {
-      imageBuffer    = fs.readFileSync(req.file.path);
-      sourceImageUrl = `/uploads/${req.file.filename}`;
+      imageBuffer    = USE_BLOB_STORAGE ? req.file.buffer : fs.readFileSync(req.file.path);
+      sourceImageUrl = USE_BLOB_STORAGE ? null : `/uploads/${req.file.filename}`;
       usedUpload     = true;
 
     } else if (url) {
@@ -248,7 +380,7 @@ app.post('/generate-card', upload.single('image'), async (req, res) => {
 
     const { cardId, imagePath, duration } = await generateCard({ imageBuffer, overlayMode });
 
-    saveCard(cardId, { source_url: url || null, source_image_url: sourceImageUrl, image_path: imagePath, overlay_mode: overlayMode, duration, twitter_site: twitterSite });
+    await saveCard(cardId, { source_url: url || null, source_image_url: sourceImageUrl, image_path: imagePath, overlay_mode: overlayMode, duration, twitter_site: twitterSite });
 
     const base = baseUrl(req);
     return res.json({
@@ -267,10 +399,13 @@ app.post('/generate-card', upload.single('image'), async (req, res) => {
 });
 
 // ─── POST /generate-cards (batch, JSON only) ──────────────────────────────────
-app.post('/generate-cards', async (req, res) => {
+app.post('/generate-cards', requireGeneratorKey, async (req, res) => {
   const { items } = req.body;
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ success: false, error: '"items" array is required.' });
+  }
+  if (items.length > MAX_BATCH_SIZE) {
+    return res.status(400).json({ success: false, error: `A maximum of ${MAX_BATCH_SIZE} items is allowed per request.` });
   }
 
   const results = await Promise.all(
@@ -290,7 +425,7 @@ app.post('/generate-cards', async (req, res) => {
 
       try {
         const { cardId, imagePath, duration } = await generateCard({ imageBuffer, overlayMode });
-        saveCard(cardId, { source_url: url, source_image_url: meta.imageUrl, image_path: imagePath, overlay_mode: overlayMode, duration });
+        await saveCard(cardId, { source_url: url, source_image_url: meta.imageUrl, image_path: imagePath, overlay_mode: overlayMode, duration });
         const base = baseUrl(req);
         return {
           success:         true,
@@ -312,16 +447,21 @@ app.post('/generate-cards', async (req, res) => {
 // This is the URL you paste into Twitter. Twitter's crawler visits it,
 // reads the <meta> tags, and renders the 1200×630 image as a card.
 app.get('/c/:id', async (req, res) => {
-  const cards = loadCards();
-  const card  = cards[req.params.id];
+  let card;
+  try {
+    card = await loadCard(req.params.id);
+  } catch (e) {
+    console.error('[card-load]', e.message);
+    return res.status(502).send('Card storage unavailable');
+  }
 
   if (!card) {
     return res.status(404).send('Card not found');
   }
 
-  // If the image file was wiped (Railway redeploy), regenerate it silently
-  const diskPath = path.join(__dirname, card.image_path);
-  if (!fs.existsSync(diskPath) && card.source_image_url) {
+  // In local mode, regenerate a remotely sourced image if local files were lost.
+  const diskPath = USE_BLOB_STORAGE ? null : path.join(__dirname, card.image_path);
+  if (!USE_BLOB_STORAGE && !fs.existsSync(diskPath) && card.source_image_url) {
     try {
       const imageBuffer = await downloadImage(card.source_image_url);
       // Regenerate into the exact same path so the URL stays valid
@@ -341,12 +481,10 @@ app.get('/c/:id', async (req, res) => {
   }
 
   const base      = baseUrl(req);
-  const imageUrl  = `${base}${card.image_path}`;
+  const imageUrl  = /^https?:\/\//.test(card.image_path) ? card.image_path : `${base}${card.image_path}`;
   const pageUrl   = `${base}/c/${req.params.id}`;
   const duration  = card.duration || '';
   const twitterSite = card.twitter_site || '';
-  const srcUrl   = card.source_url || pageUrl;
-
   // Minimal HTML — Twitter only needs the <head> meta tags
   res.set('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!DOCTYPE html>
@@ -381,7 +519,11 @@ app.get('/c/:id', async (req, res) => {
 });
 
 // ─── Health check ─────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => res.json({ status: 'ok', version: '1.0.0' }));
+app.get('/health', (req, res) => res.json({
+  status: 'ok',
+  version: '1.1.0',
+  storage: USE_BLOB_STORAGE ? 'vercel-blob' : 'local',
+}));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {

@@ -15,6 +15,8 @@
 - 提供网页操作界面，可连续处理多条素材并下载生成的 PNG。
 - 为每张卡片生成 `/c/<id>` 页面，包含 Twitter Card 和 Open Graph meta 标签。
 - 提供单张生成接口和 URL 批量生成接口。
+- 在 Vercel 部署时使用 Blob 持久化图片和卡片元数据。
+- 支持为公开部署配置生成访问密钥，防止陌生人消耗免费额度。
 
 ## 工作流程
 
@@ -58,6 +60,9 @@ npm run dev
 | `overlayMode` | `play` 或 `pause`，默认 `play` |
 | `twitterSite` | 可选的 `@账号` 信息，用于生成页面的 meta 标签 |
 
+如果服务配置了 `GENERATOR_KEY`，请求还必须携带
+`x-generator-key: <你的密钥>` 请求头。前端页面提供了对应的输入框。
+
 响应中包含生成图片路径 `generated_image` 和可分享页面链接 `card_page_url`。
 
 ### `POST /generate-cards`
@@ -92,9 +97,26 @@ BASE_URL=https://your-public-domain.example
 部署完成后，对外提供的前端入口将是类似
 `https://your-public-domain.example/` 的公网地址，而不是 `http://localhost:3000/`。
 
-项目包含 `Dockerfile`，可部署到 Railway 或其他支持 Node.js / Docker 的平台。
+### Vercel Hobby + Blob
 
-当前实现将生成图片、上传图片及卡片元数据保存在本地文件系统中的 `generated/`、`uploads/` 和 `cards.json`。如果部署平台的磁盘会在重启或重新部署后清空，应配置持久化存储或进一步接入对象存储与数据库。
+Vercel 部署使用 public Blob 保存生成后的图片，以及渲染 Card 页面所需的最小元数据。
+需要在 Vercel 项目中连接一个 public Blob store，使项目获得
+`BLOB_READ_WRITE_TOKEN` 环境变量；服务检测到该变量后会自动切换到 Blob 存储。
+
+为了避免公开生成接口被滥用而耗尽免费额度，公网部署还应配置：
+
+```bash
+GENERATOR_KEY=仅自己保存的随机密钥
+```
+
+前端页面需要输入该密钥后才能生成卡片，但已经生成的 `/c/<id>` 页面保持公开，
+因此 X 可以正常抓取预览。
+
+### 本地与容器部署
+
+未配置 Blob 时，应用继续将图片和元数据保存到本地文件系统中的 `generated/`、
+`uploads/` 和 `cards.json`，适用于本地运行或具备持久磁盘的容器平台。
+项目仍保留 `Dockerfile` 供这类部署方式使用。
 
 ## 技术栈
 
@@ -102,6 +124,7 @@ BASE_URL=https://your-public-domain.example
 - Cheerio + Axios：网页元数据抓取与远程图片下载
 - Sharp：图片裁切、缩放与 SVG 覆盖层合成
 - Multer：上传文件接收
+- Vercel Blob：公网部署时持久化卡片图片与元数据
 
 ## 目录结构
 
