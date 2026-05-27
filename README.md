@@ -6,6 +6,12 @@
 
 > 本项目不会登录 Twitter / X，也不会自动发布推文。它生成的是图片和可粘贴到推文中的公开链接。
 
+## 在线入口
+
+[https://twitter-card-generator-jade.vercel.app/](https://twitter-card-generator-jade.vercel.app/)
+
+线上生成接口受访问密钥保护。已生成的 Card 页面保持公开，以便 Twitter / X 抓取预览。
+
 ## 功能
 
 - 从 URL 自动读取 `twitter:image`、`og:image`、视频海报或页面图片。
