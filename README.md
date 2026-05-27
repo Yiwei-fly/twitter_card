@@ -33,7 +33,11 @@ npm install
 npm start
 ```
 
-打开 [http://localhost:3000](http://localhost:3000) 即可使用前端页面。
+完成上述命令后，在运行服务的这台电脑上打开
+[http://localhost:3000](http://localhost:3000) 即可使用前端页面。
+
+`localhost` 表示访问者自己的电脑，不是公开网站地址。其他人直接打开这个链接，
+访问的是他们自己的本机，因此无法进入你的服务。
 
 开发时也可以使用：
 
@@ -78,11 +82,15 @@ npm run dev
 
 ## 部署说明
 
-`localhost` 只能用于本地预览，Twitter / X 的爬虫无法访问本机地址。要生成可被平台抓取的 Card，必须把服务部署到公网，并设置：
+`localhost` 只能用于本地预览，其他访问者以及 Twitter / X 的爬虫都无法通过该地址访问你的服务。
+要让别人使用前端页面，或生成可被平台抓取的 Card，必须把服务部署到公网，并设置：
 
 ```bash
 BASE_URL=https://your-public-domain.example
 ```
+
+部署完成后，对外提供的前端入口将是类似
+`https://your-public-domain.example/` 的公网地址，而不是 `http://localhost:3000/`。
 
 项目包含 `Dockerfile`，可部署到 Railway 或其他支持 Node.js / Docker 的平台。
 
